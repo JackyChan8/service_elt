@@ -16,6 +16,18 @@ class SoapService:
     _cache = {}
     _client = None
     _session = None
+    available_companies = [
+        'ВСК',
+        'Согласие',
+        'ИНГОССТРАХ',
+        'Росгосстрах',
+        'Согаз Москва',
+        'АльфаСтрахование',
+        'Энергогарант Москва',
+        'РЕСО-Гарантия Москва',
+        'Сбербанк страхование Москва',
+        'Группа Ренессанс Страхование',
+    ]
 
     def __init__(self, username: str, password: str):
         """
@@ -23,6 +35,18 @@ class SoapService:
         """
         self.username = username
         self.password = password
+
+    @classmethod
+    def get_available_companies(cls, client_, login) -> list[str]:
+        """
+            Get Available Companies
+        """
+        companies = serialize_object(cls.get_list_sk(client_, login))
+        companies_ids = []
+
+        for company in companies:
+            companies_ids.append(company.get('Id'))
+        return companies_ids
 
     @staticmethod
     def get_client(username: str, password: str):
