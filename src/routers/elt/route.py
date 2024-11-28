@@ -317,6 +317,26 @@ def casco_get_kladr_regions():
         soap.close()
 
 
+@router.get(path='/casco-get-kladr-cities',
+            status_code=status.HTTP_200_OK,
+            response_model=schemas.KladrCitiesResponse,
+            description='Метод получения идентификатора, КЛАДРа города/населённого пункта')
+def casco_get_kladr_cities(region_id: str):
+    """
+        Get Kladr Cities Service
+    """
+    elt_username, elt_password = settings.ELT_USERNAME, settings.ELT_PASSWORD.get_secret_value()
+
+    soap = utils.SoapService(elt_username, elt_password)
+    client = soap.get_client(elt_username, elt_password)
+
+    try:
+        result = soap.get_full_kladr_cities(client, region_id)
+        kladr_cities_models = [schemas.KladrCity(**serialize_object(kladr_city)) for kladr_city in result]
+        return schemas.KladrCitiesResponse(cities=kladr_cities_models)
+    finally:
+        soap.close()
+
 @router.get(path='/casco-get-kladr-countries',
             status_code=status.HTTP_200_OK,
             response_model=schemas.CountriesResponse,
@@ -437,7 +457,7 @@ def casco_calculation_service(company: str, data: schemas.EltCascoCalculation):
 @router.post(path='/finish-casco-calculation',
              status_code=status.HTTP_200_OK,
              description='Метод получения окончательного расчета и предварительного сохранения КАСКО')
-async def finish_casco_calculation_service(company: str, data: schemas.EltCascoCalculation):
+def finish_casco_calculation_service(company: str, data: schemas.EltCascoCalculation):
     """
         Finish Casco calculation service
     """

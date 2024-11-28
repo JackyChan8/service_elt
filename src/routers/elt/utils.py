@@ -232,12 +232,12 @@ class SoapService:
         return cls.request(client_, cache_id,'GetRegionsExt')
 
     @classmethod
-    def get_full_kladr_cities(cls, client_):
+    def get_full_kladr_cities(cls, client_, region_id: str):
         """
             Получения идентификатора, КЛАДРа города/населённого пункта.
         """
         cache_id = 'get_kladr_full_cities'
-        return cls.request(client_, cache_id, 'GetCitiesExt')
+        return cls.request(client_, cache_id, 'GetCitiesExt', params={'RegionId': region_id})
 
     @classmethod
     def get_full_kladr_countries(cls, client_):

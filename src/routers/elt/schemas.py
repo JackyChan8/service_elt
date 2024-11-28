@@ -5,13 +5,17 @@ from pydantic import BaseModel
 from src.schemas.schemas import StatusResponseEnum
 
 
-# ========================================================= Utils
+# ================================================================================================================== #
+# ========================================================= Utils ================================================== #
+# ================================================================================================================== #
 class UtilsOption(BaseModel):
     Id: Optional[str] = None
     Name: str
 
 
-# ========================================================= Request
+# ================================================================================================================== #
+# ========================================================= Request ================================================ #
+# ================================================================================================================== #
 class ModificationModel(BaseModel):
     Name: str
     Power: int  # Мощность двигателя, л.с (неотрицательное целое число)
@@ -187,20 +191,18 @@ class RefInfo(UtilsOption):
     Values: Optional[Values]
 
 
-class ModificationResponse(BaseModel):
-    cars: list[Car]
+# ================================================================================================================== #
+# ========================================================= Response =============================================== #
+# ================================================================================================================== #
+
+class ResponseErrorCascoCalculation(BaseModel):
+    status: StatusResponseEnum = StatusResponseEnum.SUCCESS
+    error_info: str
 
 
-class BankResponse(BaseModel):
-    banks: list[Bank]
-
-
-class DoResponse(BaseModel):
-    do: list[Do]
-
-
-class OpfResponse(BaseModel):
-    opf: list[Opf]
+class ResponseSuccessCascoCalculation(BaseModel):
+    status: StatusResponseEnum = StatusResponseEnum.SUCCESS
+    data: Any
 
 
 class InsuranceCompaniesResponse(BaseModel):
@@ -236,8 +238,16 @@ class KladrRegion(UtilsOption):
     Kladr: str
 
 
+class KladrCity(UtilsOption):
+    Kladr: str
+
+
 class KladrRegionResponse(BaseModel):
     regions: list[KladrRegion]
+
+
+class KladrCitiesResponse(BaseModel):
+    cities: list[KladrCity]
 
 
 class CountriesResponse(BaseModel):
@@ -252,12 +262,17 @@ class GoLimitResponse(BaseModel):
     go_limit: list[GoLimit]
 
 
-# ========================================================= Response
-class ResponseErrorCascoCalculation(BaseModel):
-    status: StatusResponseEnum = StatusResponseEnum.SUCCESS
-    error_info: str
+class ModificationResponse(BaseModel):
+    cars: list[Car]
 
 
-class ResponseSuccessCascoCalculation(BaseModel):
-    status: StatusResponseEnum = StatusResponseEnum.SUCCESS
-    data: Any
+class BankResponse(BaseModel):
+    banks: list[Bank]
+
+
+class DoResponse(BaseModel):
+    do: list[Do]
+
+
+class OpfResponse(BaseModel):
+    opf: list[Opf]
