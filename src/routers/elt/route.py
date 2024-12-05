@@ -1,7 +1,9 @@
-from fastapi import APIRouter, status
 from zeep.helpers import serialize_object
+from fastapi import APIRouter, status, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
+from src.database import get_async_session
 from src.routers.elt import schemas, utils
 from src.schemas import schemas as global_schemas
 from src.exceptions import exceptions as global_exceptions
@@ -423,7 +425,18 @@ def get_print_forms(order_id: str):
              status_code=status.HTTP_200_OK,
              responses={
                 status.HTTP_400_BAD_REQUEST: {
-                    'description': 'Произошла ошибка при получения предварительного расчета Спецтехники',
+                    'description': 'Отправка котировок в Ресо-Гарантия возможно, когда посчитаны 3 и более страховых компаний! | Произошла ошибка при получения предварительного расчета Спецтехники',
+                    'content': {
+                        'application/json': {
+                            'schema': {
+                                'type': 'object',
+                                'properties': {'detail': 'string'}
+                            }
+                        }
+                    }
+                },
+                status.HTTP_500_INTERNAL_SERVER_ERROR: {
+                    'description': 'Произошла ошибка при сохранении результата ELT в Базу Данных',
                     'content': {
                         'application/json': {
                             'schema': {
@@ -434,42 +447,37 @@ def get_print_forms(order_id: str):
                     }
                 },
              },
-             response_model=schemas.ResponseSuccessCascoCalculation,
-             description='Метод получения предварительного расчета Спецтехники',)
-def casco_calculation_service(company: str, data: schemas.EltCascoCalculation):
+             description='Метод получения предварительного расчета Спецтехники')
+async def casco_calculation_service(data: schemas.EltCascoCalculation, session: AsyncSession = Depends(get_async_session)):
     """
         Casco calculation service
     """
+
     method = 'PreliminaryKASKOCalculation'
     cache_id = 'preliminary_casco_calculation'
 
-    elt_username, elt_password = settings.ELT_USERNAME, settings.ELT_PASSWORD.get_secret_value()
+    username, password = settings.ELT_USERNAME, settings.ELT_PASSWORD.get_secret_value()
+    elt_soap = utils.EltService(username, password)
+    client = await elt_soap.get_client()
+    try:
+        # Get Available Companies IDS
+        available_companies_ids = await elt_soap.get_available_companies(client, username)
+        return await elt_soap.casco_calculation(method, cache_id, available_companies_ids, data, session)
+    finally:
+        await elt_soap.close()
 
-    soap = utils.SoapService(elt_username, elt_password)
-    client = soap.get_client(elt_username, elt_password)
+
+@router.post(path='/reso-request')
+def casco_reso_test(calc_id: int):
+    """
+        Casco Reso Guarantee Service
+    """
+
+    username, password = settings.RESO_GUARANTEE_USERNAME, settings.RESO_GUARANTEE_PASSWORD.get_secret_value()
+    guarantee_soap = utils.ResoGuarantee(username, password)
+    client = guarantee_soap.get_client()
 
     try:
-        return soap.casco_calculation(client, method, company, cache_id, data)
+        return guarantee_soap.get_rl_actions(calc_id)
     finally:
-        soap.close()
-
-
-@router.post(path='/finish-casco-calculation',
-             status_code=status.HTTP_200_OK,
-             description='Метод получения окончательного расчета и предварительного сохранения КАСКО')
-def finish_casco_calculation_service(company: str, data: schemas.EltCascoCalculation):
-    """
-        Finish Casco calculation service
-    """
-    method = 'FinalKASKOCalculation'
-    cache_id = 'final_casco_calculation'
-
-    elt_username, elt_password = settings.ELT_USERNAME, settings.ELT_PASSWORD.get_secret_value()
-
-    soap = utils.SoapService(elt_username, elt_password)
-    client = soap.get_client(elt_username, elt_password)
-
-    try:
-        return soap.casco_calculation(client, method, company, cache_id, data)
-    finally:
-        soap.close()
+        guarantee_soap.close()

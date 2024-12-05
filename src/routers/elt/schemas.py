@@ -95,8 +95,8 @@ class EltCascoCalculation(BaseModel):
     PayType: int
     Vehicle: VehicleModel
     Drivers: List[DriverModel] = []
-    GO: List[dict] = []  # Можно уточнить структуру
-    NS: List[str] = []  # Можно уточнить структуру
+    GO: List[dict] = []
+    NS: List[str] = []
     GAP: int  # 0 или 1
     Insurer: List[InsurerModel]
     Lessee: List[LesseeModel]

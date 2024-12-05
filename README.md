@@ -10,4 +10,16 @@
 docker compose -f docker-compose.yml up -d
 ```
 
+## Миграции:
+
+### Создать миграцию:
+```shell
+alembic revision --autogenerate -m "Comment"
+```
+
+### Применить миграцию:
+```shell
+alembic upgrade heed
+```
+
 ## Python Версия: ```3.12.0```
