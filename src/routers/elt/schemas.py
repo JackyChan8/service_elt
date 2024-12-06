@@ -191,6 +191,16 @@ class RefInfo(UtilsOption):
     Values: Optional[Values]
 
 
+class ResoGuaranteeCalc(BaseModel):
+    InsuranceCompany: str
+    PremiumSum: int
+    Franchise: int
+
+
+class ResoGuaranteeCreate(BaseModel):
+    calc_id: int
+    prev_calc_id: Optional[int] = False
+
 # ================================================================================================================== #
 # ========================================================= Response =============================================== #
 # ================================================================================================================== #

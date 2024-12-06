@@ -4,8 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
 from src.database import get_async_session
-from src.routers.elt import schemas, utils
 from src.schemas import schemas as global_schemas
+from src.routers.elt import schemas, utils, services
 from src.exceptions import exceptions as global_exceptions
 
 router = APIRouter(prefix='/elt', tags=['elt'])
@@ -467,17 +467,46 @@ async def casco_calculation_service(data: schemas.EltCascoCalculation, session: 
         await elt_soap.close()
 
 
-@router.post(path='/reso-request')
-def casco_reso_test(calc_id: int):
+@router.post(path='/reso-guarantee-rl-actions',
+             description='Отправка в Ресо Гарантия Котировок')
+async def casco_reso_guarantee(data: schemas.ResoGuaranteeCreate, session: AsyncSession = Depends(get_async_session)):
     """
         Casco Reso Guarantee Service
     """
 
     username, password = settings.RESO_GUARANTEE_USERNAME, settings.RESO_GUARANTEE_PASSWORD.get_secret_value()
     guarantee_soap = utils.ResoGuarantee(username, password)
-    client = guarantee_soap.get_client()
+    guarantee_soap.get_client()
+
+    # Получение компаний
+    companies = await services.get_all_insurance_accept(data.calc_id, session)
+    companies = [
+        {
+            'InsuranceCompany': company.insurance_name,
+            'PremiumSum': company.PremiumSum,
+            'Franchise': company.TotalFranchise,
+        }
+        for company in companies
+    ]
 
     try:
-        return guarantee_soap.get_rl_actions(calc_id)
+        return await guarantee_soap.get_rl_actions(data, companies, session)
+    finally:
+        guarantee_soap.close()
+
+
+@router.post(path='/reso-guarantee-rl-status',
+             description='Получение премии по Квоте')
+def casco_reso_guarantee_check_status(quote_id: int):
+    """
+        Casco Reso Guarantee Check by Quote Service
+    """
+
+    username, password = settings.RESO_GUARANTEE_USERNAME, settings.RESO_GUARANTEE_PASSWORD.get_secret_value()
+    guarantee_soap = utils.ResoGuarantee(username, password)
+    guarantee_soap.get_client()
+
+    try:
+        return guarantee_soap.get_rl_status(quote_id)
     finally:
         guarantee_soap.close()

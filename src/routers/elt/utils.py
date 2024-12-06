@@ -716,19 +716,176 @@ class ResoGuarantee:
         if cls._session:
             cls._session = None
 
-    def get_rl_status(self):
+    def get_rl_status(self, quote_id: int):
+        """
+            Получение премии по Квоте
+        """
+        response_status = self.request(
+            self._client,
+            'get_rl_status',
+            'GetRLStatus',
+            params={'QuoteID': quote_id},
+        )
+        data_status = serialize_object(response_status)
+        if data_status.get('Error') == 'OK':
+            if data_status.get('Status') == 'SUCEESS':
+                raise global_exceptions.MyHTTPException(
+                    status=global_schemas.StatusResponseEnum.SUCCESS,
+                    status_code=status.HTTP_200_OK,
+                    message=data_status,
+                )
+            else:
+                raise global_exceptions.MyHTTPException(
+                    status=global_schemas.StatusResponseEnum.ERROR,
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message=data_status,
+                )
+        else:
+            raise global_exceptions.MyHTTPException(
+                status=global_schemas.StatusResponseEnum.ERROR,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=data_status.get('Error'),
+            )
+
+    async def get_rl_actions(self,
+                             data: schemas.ResoGuaranteeCreate,
+                             companies: list[dict], session: AsyncSession):
+        """
+            Передача номер расчета ЕЛТ и премии конкурентов в Ресо Гарантию
+        """
+        params = {
+            'parameter': {
+                'CalcID': data.calc_id,
+                'PrevCalcID': data.prev_calc_id,
+                'CalculationList': {
+                    'Calculation': companies,
+                }
+            }
+        }
+
+        response_rl_actions = self.request(
+            self._client,
+            'get_rl_actions',
+            'GetRLActions',
+            params=params,
+        )
+        data_rl_actions = serialize_object(response_rl_actions)
+
+        if data_rl_actions.get('Error') == 'OK':
+            quote_id = data_rl_actions.get('QuoteID')
+            police_id = data_rl_actions.get('PolicyID')
+
+            response_status = self.request(
+                self._client,
+                'get_rl_status',
+                'GetRLStatus',
+                params={'QuoteID': quote_id},
+            )
+            data_status = serialize_object(response_status)
+            # Добавляем в Базу Квот
+            await services.update_insurance(
+                data.calc_id,
+                {'quote_id': quote_id, 'police_id': police_id},
+                session,
+            )
+
+            if data_status.get('Error') == 'OK':
+                if data_status.get('Status') == 'SUCEESS':
+                    raise global_exceptions.MyHTTPException(
+                        status=global_schemas.StatusResponseEnum.SUCCESS,
+                        status_code=status.HTTP_200_OK,
+                        message='Полис успешно создан',
+                    )
+                else:
+                    raise global_exceptions.MyHTTPException(
+                        status=global_schemas.StatusResponseEnum.ERROR,
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        message=data_status,
+                    )
+            else:
+                raise global_exceptions.MyHTTPException(
+                    status=global_schemas.StatusResponseEnum.ERROR,
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message=data_status.get('Error'),
+                )
+        else:
+            raise global_exceptions.MyHTTPException(
+                status=global_schemas.StatusResponseEnum.ERROR,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=data_rl_actions,
+            )
+
+
+class ResoGuaranteeAsync:
+    """
+        Ресо Гарантия
+    """
+    _client = None
+    _session = None
+
+    def __init__(self, username: str, password: str):
+        """
+            Инициализация
+        """
+        self.username = username
+        self.password = password
+
+    @classmethod
+    async def request(cls, client_, cache_id: str, method: str, params=None):
+        """
+            Запрос
+        """
+        if method is None:
+            return None
+
+        # Выполнение запроса
+        try:
+            if params:
+                data = await getattr(client_.service, method)(**params)
+            else:
+                data = await getattr(client_.service, method)()
+        except Fault as e:
+            print(f"SOAP Fault: {e}")
+            return None
+        return data
+
+    async def get_client(self):
+        """
+            Получение клиента SOAP
+        """
+
+        if ResoGuaranteeAsync._client is None:
+            async_client = httpx.AsyncClient(
+                auth=(self.username, self.password),
+                verify=True,
+                timeout=240,
+            )
+            transport = AsyncTransport(client=async_client)
+            ResoGuaranteeAsync._client = AsyncClient(settings.RESO_GUARANTEE, transport=transport)
+        return ResoGuaranteeAsync._client
+
+    @classmethod
+    async def close(cls):
+        """
+            Закрытие клиента и сессии
+        """
+        if cls._client:
+            cls._client = None  # Очищаем клиент
+        if cls._session:
+            cls._session = None
+
+    async def get_rl_status(self):
         pass
 
-    def get_rl_actions(self, calc_id: int):
+    async def get_rl_actions(self, calc_id: int):
         params = {
             'parameter': {
                 'CalcID': calc_id,
-                'PrevCalcID': False,
                 'CalculationList': {
                     'Calculation': [
                         {
-                            'InsuranceCompany': 'SOGLASIE_MSK',
-                            'PremiumSum': 71368,
+                            'InsuranceCompany': 'SOGAZ_77',
+                            'PremiumSum': 151074,
                             'Franchise': 15000,
                         },
                         {
@@ -741,22 +898,28 @@ class ResoGuarantee:
                             'PremiumSum': 143567,
                             'Franchise': 15000,
                         },
+                        {
+                            'InsuranceCompany': 'RESO_GARANTIJA',
+                            'PremiumSum': 263101,
+                            'Franchise': 15000,
+                        },
                     ]
                 }
             }
         }
 
-        response_rl_actions = self.request(
+        response_rl_actions = await self.request(
             self._client,
             'get_rl_actions',
             'GetRLActions',
             params=params,
         )
+        print('response_rl_actions: ', response_rl_actions)
         data_rl_actions = serialize_object(response_rl_actions)
         print('data_rl_actions: ', data_rl_actions)
 
         if data_rl_actions.get('Error') == 'OK':
-            response_status = self.request(
+            response_status = await self.request(
                 self._client,
                 'get_rl_status',
                 'GetRLStatus',

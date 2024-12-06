@@ -1,24 +1,42 @@
+from sqlalchemy import select, update, null
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from src.logger import logger
-from src.models import InsuranceElt
+from src.models import InsuranceElt, Insurance
 
 
-async def get_all_insurance_elt(session: AsyncSession):
-    result = await session.execute(select(InsuranceElt))
+async def get_all_insurance_accept(calc_id: int, session: AsyncSession):
+    """
+        Get Insurance Elt
+    """
+    query = (
+        select(InsuranceElt)
+        .where(
+            InsuranceElt.calc_id == calc_id,
+            InsuranceElt.Error == null(),
+        )
+    )
+    result = await session.execute(query)
     return result.scalars().all()
+
 
 async def create_insurance_elt(calc_id: int, data: list, session: AsyncSession):
     """
         Create Insurance Elt
     """
     try:
+        # Создание Страхования
+        new_insurance = Insurance(calc_id=int(calc_id))
+        session.add(new_insurance)
+        await session.commit()
+
+        # Добавление ELT Котировок
         for company_data in data:
             for company_name, company_info in company_data.items():
                 insurance_data = company_info['data']
                 insurance_elt = InsuranceElt(
-                    insurance_id=int(calc_id),
+                    calc_id=int(calc_id),
+                    insurance_id=new_insurance.id,
                     insurance_name=company_name,
                     RequestId=insurance_data.get('RequestId'),
                     SKCalcId=insurance_data.get('SKCalcId'),
@@ -38,3 +56,17 @@ async def create_insurance_elt(calc_id: int, data: list, session: AsyncSession):
         await session.commit()
     except Exception as exc:
         logger.error(exc)
+
+
+async def update_insurance(calc_id: int, values: dict, session: AsyncSession):
+    """
+        Update Insurance
+    """
+    query = (
+        update(Insurance)
+        .where(Insurance.calc_id == calc_id)
+        .values(**values)
+        .execution_options(synchronize_session='fetch')
+    )
+    await session.execute(query)
+    await session.commit()
