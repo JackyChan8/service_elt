@@ -1,3 +1,4 @@
+import time
 import httpx
 import asyncio
 from requests import Session
@@ -268,13 +269,13 @@ class SoapService:
             cls._session = None
 
     @classmethod
-    def request(cls, client_, cache_id: str, method: str, params=None):
-        # cache_time = 1000  # Время кэширования в секундах
-        # current_time = time.time()
-        #
-        # # Проверка кэша
-        # if cache_id in cls._cache and (current_time - cls._cache[cache_id]['timestamp'] < cache_time):
-        #     return cls._cache[cache_id]['data']
+    def request(cls, client_, cache_id: str, method: str, params=None, is_cache: bool = False, cache_time: int = 1000):
+        current_time = time.time()
+
+        if is_cache:
+            # Проверка кэша
+            if cache_id in cls._cache and (current_time - cls._cache[cache_id]['timestamp'] < cache_time):
+                return cls._cache[cache_id]['data']
 
         if method is None:
             return None
@@ -289,8 +290,9 @@ class SoapService:
             print(f"SOAP Fault: {e}")
             return None
 
-        # Сохранение в кэш
-        # cls._cache[cache_id] = {'data': data, 'timestamp': current_time}
+        if is_cache:
+            # Сохранение в кэш
+            cls._cache[cache_id] = {'data': data, 'timestamp': current_time}
         return data
 
     @classmethod
@@ -450,15 +452,22 @@ class SoapService:
             Получения идентификатора, КЛАДРа с полным наименованием регионов
         """
         cache_id = 'get_kladr_full_regions'
-        return cls.request(client_, cache_id,'GetRegionsExt')
+        return cls.request(client_, cache_id,'GetRegionsExt', is_cache=True, cache_time=86400)
 
     @classmethod
     def get_full_kladr_cities(cls, client_, region_id: str):
         """
             Получения идентификатора, КЛАДРа города/населённого пункта.
         """
-        cache_id = 'get_kladr_full_cities'
-        return cls.request(client_, cache_id, 'GetCitiesExt', params={'RegionId': region_id})
+        cache_id = f'get_kladr_full_cities_{region_id}'
+        return cls.request(
+            client_,
+            cache_id,
+            'GetCitiesExt',
+            params={'RegionId': region_id},
+            is_cache=True,
+            cache_time=86400,
+        )
 
     @classmethod
     def get_full_kladr_countries(cls, client_):

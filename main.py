@@ -1,18 +1,14 @@
 import socks
 import socket
+
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.logger import logger
 from src.config import settings
-from src.routers import elt_router
+from src.routers import elt_router, excel_router
 
-
-# Setup Socks
-ip, port = 'localhost', 31415
-socks.setdefaultproxy(socks.PROXY_TYPE_SOCKS5, ip, port)
-socket.socket = socks.socksocket
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
@@ -45,3 +41,4 @@ app.add_middleware(
 
 # Include Routers
 app.include_router(elt_router)
+app.include_router(excel_router)

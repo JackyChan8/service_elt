@@ -47,3 +47,15 @@ class Insurance(Base):
 
     # Связь с моделью InsuranceElt
     insurance_elts = relationship("InsuranceElt", back_populates="insurance")
+
+
+class Cars(Base):
+    __tablename__ = 'cars'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    brand: Mapped[str] = mapped_column(Text, nullable=True, default=None)
+    model: Mapped[str] = mapped_column(Text, nullable=True, default=None)
+    modif: Mapped[str] = mapped_column(Text, nullable=True, default=None)
+    sk_brand: Mapped[str] = mapped_column(Text, nullable=True, default=None)
+    sk_model: Mapped[str] = mapped_column(Text, nullable=True, default=None)
+    type: Mapped[str] = mapped_column(String(5), nullable=True, default=None)
