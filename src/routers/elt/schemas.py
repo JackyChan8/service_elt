@@ -17,7 +17,7 @@ class UtilsOption(BaseModel):
 # ========================================================= Request ================================================ #
 # ================================================================================================================== #
 class ModificationModel(BaseModel):
-    Name: str
+    # Name: str
     Power: int  # Мощность двигателя, л.с (неотрицательное целое число)
     EngineType: int  # Тип двигателя
     KPPTypeId: int  # Тип коробки передач
@@ -41,7 +41,7 @@ class VehicleModel(BaseModel):
     VehicleUsage: int  # Использование ТС
     Mileage: int  # Пробег (км)
     SeatingCapacity: int
-    Classification: int  # Классификация
+    # Classification: int  # Классификация
 
 
 class DriverElement(BaseModel):
@@ -78,14 +78,14 @@ class EltCascoCalculation(BaseModel):
     Franchise: Optional[str] = ''  # Франшиза, процент от Цены ТС или абсолютная величина (зависит от настроек системы)
     SSType: int  # 0 или 1
     STOA: int = 0  # Тип страхового возмещения
-    Region: int  # Регион регистрации
-    Autostart: Optional[str] = ''
-    AtsSound: Optional[str] = ''
-    StandartImmobilizer: int
-    CentralLocking: int
-    MarkingGlasses: Optional[str] = ''  # 0 или 1
-    SelfIgnition: Optional[str] = ''  # 0 или 1
-    OutsideRoads: Optional[str] = ''  # 0 или 1
+    Region: str | int  # Регион регистрации
+    # Autostart: Optional[str] = ''
+    # AtsSound: Optional[str] = ''
+    # StandartImmobilizer: int
+    # CentralLocking: int
+    # MarkingGlasses: Optional[str] = ''  # 0 или 1
+    # SelfIgnition: Optional[str] = ''  # 0 или 1
+    # OutsideRoads: Optional[str] = ''  # 0 или 1
     NotConfirmedDamages: int
     NotConfirmedGlassesDamages: int
     PUUs: Optional[List[str]] = []  # Список PUU
@@ -100,6 +100,9 @@ class EltCascoCalculation(BaseModel):
     GAP: int  # 0 или 1
     Insurer: List[InsurerModel]
     Lessee: List[LesseeModel]
+    # Калькулятор ID
+    calc_reso_id: int
+    active_companies: list[str]
 
 
 class Car(BaseModel):
@@ -201,6 +204,13 @@ class ResoGuaranteeCreate(BaseModel):
     calc_id: int
     prev_calc_id: Optional[int] = False
 
+
+class Franchise(UtilsOption):
+    pass
+
+
+class SSType(UtilsOption):
+    pass
 # ================================================================================================================== #
 # ========================================================= Response =============================================== #
 # ================================================================================================================== #
@@ -286,3 +296,15 @@ class DoResponse(BaseModel):
 
 class OpfResponse(BaseModel):
     opf: list[Opf]
+
+
+class FranchiseResponse(BaseModel):
+    franchises: list[Franchise]
+
+
+class SSTypeResponse(BaseModel):
+    ss_types: list[SSType]
+
+
+class QuoteResponse(BaseModel):
+    quote_id: int

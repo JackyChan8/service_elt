@@ -6,6 +6,9 @@ from src.config import settings
 from src.database import get_async_session
 from src.schemas import schemas as global_schemas
 from src.routers.elt import schemas, utils, services
+from src.routers.excel import (
+    services as car_services,
+)
 from src.exceptions import exceptions as global_exceptions
 
 router = APIRouter(prefix='/elt', tags=['elt'])
@@ -401,6 +404,42 @@ def get_go_limit(company_id: str):
     finally:
         soap.close()
 
+@router.get(path='/casco-get-franchise',
+            status_code=status.HTTP_200_OK,
+            response_model=schemas.FranchiseResponse,
+            description='Получение Франшизы')
+def get_franchise():
+    """
+        Get Franchise Service
+    """
+    username, password = settings.ELT_USERNAME, settings.ELT_PASSWORD.get_secret_value()
+    elt_soap = utils.SoapService(username, password)
+    client = elt_soap.get_client(username, password)
+    try:
+        result = elt_soap.get_types(client, 'Franchise')
+        franchises = [schemas.Franchise(**serialize_object(item)) for item in result]
+        return schemas.FranchiseResponse(franchises=franchises)
+    finally:
+        elt_soap.close()
+
+
+@router.get(path='/casco-get-ss-type',
+            status_code=status.HTTP_200_OK,
+            response_model=schemas.SSTypeResponse,
+            description='Получение Тип Страховой по риску ущерб')
+def get_ss_type():
+    """
+        Get SSType Service
+    """
+    username, password = settings.ELT_USERNAME, settings.ELT_PASSWORD.get_secret_value()
+    elt_soap = utils.SoapService(username, password)
+    client = elt_soap.get_client(username, password)
+    try:
+        result = elt_soap.get_types(client, 'SSType')
+        ss_types = [schemas.SSType(**serialize_object(item)) for item in result]
+        return schemas.SSTypeResponse(ss_types=ss_types)
+    finally:
+        elt_soap.close()
 
 
 @router.get(path='/casco-get-print-forms',
@@ -453,21 +492,33 @@ async def casco_calculation_service(data: schemas.EltCascoCalculation, session: 
         Casco calculation service
     """
 
+    # Установка Модели и Бренда
+    result = await car_services.find_car_info(data.Mark, data.Model, session)
+    if result:
+        data.Mark = result.get('brand')
+        data.Model = result.get('model')
+
     method = 'PreliminaryKASKOCalculation'
     cache_id = 'preliminary_casco_calculation'
 
     username, password = settings.ELT_USERNAME, settings.ELT_PASSWORD.get_secret_value()
     elt_soap = utils.EltService(username, password)
-    client = await elt_soap.get_client()
+
+    # Получаем клиент ELT
+    await elt_soap.get_client()
+
+    # Получаем Клиент Ресо Гарантии
+    elt_soap.get_client_reso_guarantee()
+
     try:
-        # Get Available Companies IDS
-        available_companies_ids = await elt_soap.get_available_companies(client, username)
-        return await elt_soap.casco_calculation(method, cache_id, available_companies_ids, data, session)
+        return await elt_soap.casco_calculation(method, cache_id, data, session)
     finally:
         await elt_soap.close()
+        elt_soap.close_reso_guarantee()
 
 
 @router.post(path='/reso-guarantee-rl-actions',
+             status_code=status.HTTP_200_OK,
              description='Отправка в Ресо Гарантия Котировок')
 async def casco_reso_guarantee(data: schemas.ResoGuaranteeCreate, session: AsyncSession = Depends(get_async_session)):
     """
@@ -484,7 +535,7 @@ async def casco_reso_guarantee(data: schemas.ResoGuaranteeCreate, session: Async
         {
             'InsuranceCompany': company.insurance_name,
             'PremiumSum': company.PremiumSum,
-            'Franchise': company.TotalFranchise,
+            'Franchise': int(company.TotalFranchise) if company.TotalFranchise else 0,
         }
         for company in companies
     ]

@@ -1,6 +1,7 @@
 from sqlalchemy import (
     Text,
     func,
+    JSON,
     String,
     Integer,
     TIMESTAMP,
@@ -30,23 +31,33 @@ class InsuranceElt(Base):
     NSSum: Mapped[int] = mapped_column(Integer)
     GAPSum: Mapped[int] = mapped_column(Integer)
     TotalFranchise: Mapped[int] = mapped_column(Integer, default=None, nullable=True)
+    payments_period: Mapped[dict] = mapped_column(JSON, default=dict, nullable=True)
     created_at: Mapped[str] = mapped_column(TIMESTAMP, server_default=func.now(), nullable=False)
 
     # Связь с моделью Insurance
-    insurance = relationship("Insurance", back_populates="insurance_elts")
+    insurance = relationship(
+        "Insurance",
+        back_populates="insurance_elts",
+        single_parent = True,
+    )
 
 
 class Insurance(Base):
     __tablename__ = 'insurance'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    calc_reso_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=True, default=None)
     calc_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=True, default=None)
     quote_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=True, default=None)
     police_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=True, default=None)
     created_at: Mapped[str] = mapped_column(TIMESTAMP, server_default=func.now(), nullable=False)
 
     # Связь с моделью InsuranceElt
-    insurance_elts = relationship("InsuranceElt", back_populates="insurance")
+    insurance_elts = relationship(
+        "InsuranceElt",
+        back_populates="insurance",
+        cascade="all, delete-orphan"
+    )
 
 
 class Cars(Base):

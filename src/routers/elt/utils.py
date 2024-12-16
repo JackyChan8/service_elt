@@ -1,3 +1,4 @@
+import json
 import time
 import httpx
 import asyncio
@@ -23,6 +24,7 @@ class EltService:
     """
     _cache = {}
     _client = None
+    _client_reso_guarantee = None
     available_companies = [
         'ВСК',
         'Согласие',
@@ -50,6 +52,49 @@ class EltService:
         """
         if cls._client:
             cls._client = None  # Очищаем клиент
+
+    @classmethod
+    def request_reso_guarantee(cls, client_, cache_id: str, method: str, params=None):
+        """
+            Запрос
+        """
+        if method is None:
+            return None
+
+        # Выполнение запроса
+        try:
+            if params:
+                data = getattr(client_.service, method)(**params)
+            else:
+                data = getattr(client_.service, method)()
+        except Fault as e:
+            print(f"SOAP Fault: {e}")
+            return None
+        return data
+
+    def get_client_reso_guarantee(self):
+        """
+            Получение клиента SOAP
+        """
+
+        if EltService._client_reso_guarantee is None:
+            EltService._session_reso_guarantee = Session()
+            EltService._session_reso_guarantee.headers.update({'Content-Type': 'application/json; charset=utf-8'})
+            transport = Transport(session=EltService._session_reso_guarantee)
+            EltService._client_reso_guarantee = Client(
+                settings.RESO_GUARANTEE,
+                transport=transport,
+                wsse=UsernameToken(self.username, self.password),
+            )
+        return EltService._client_reso_guarantee
+
+    @classmethod
+    def close_reso_guarantee(cls):
+        """
+            Закрытие клиента и сессии
+        """
+        if cls._client_reso_guarantee:
+            cls._client_reso_guarantee = None  # Очищаем клиент
 
     @classmethod
     async def request(cls, client_, cache_id: str, method: str, params=None):
@@ -104,8 +149,25 @@ class EltService:
         cache_id = 'get_list_sk'
         return await cls.request(client_, cache_id, 'GetInsuranceCompanies', params={'Login': login})
 
+    @classmethod
+    async def get_kladr_by_name_regions(cls, name: str, client_):
+        """
+            Получения идентификатора, КЛАДРа с полным наименованием регионов
+        """
+        cache_id = 'get_kladr_full_regions'
+        data = await cls.request(client_, cache_id,'GetRegionsExt')
+
+        # Функция для фильтрации
+        def filter_by_name(item):
+            return name in item['Name']
+
+        # Используем filter для получения отфильтрованных данных
+        filtered_data = serialize_object(list(filter(filter_by_name, data)))
+        if filtered_data:
+            return filtered_data[0].get('Kladr')
+
     @staticmethod
-    async def check_valid_more_three_companies(data: list):
+    async def check_valid_more_three_companies(data: list[dict]):
         """
             Проверка на валидность более трех компаний
         """
@@ -117,19 +179,27 @@ class EltService:
                 success_elt_companies.append(insurance_name)
 
         if len(success_elt_companies) < 3:
+            if data[3].get('RESO_GARANTIJA') and data[3].get('RESO_GARANTIJA').get('data'):
+                data[3]['RESO_GARANTIJA']['data']['Error'] = ('Отправка котировок в Ресо-Гарантия возможно, '
+                                                              'когда посчитаны 3 и более страховых компаний!')
             raise global_exceptions.MyHTTPException(
                 status=global_schemas.StatusResponseEnum.ERROR,
                 status_code=status.HTTP_400_BAD_REQUEST,
-                message='Отправка котировок в Ресо-Гарантия возможно, когда посчитаны 3 и более страховых компаний!',
+                message=json.dumps(data),
             )
 
     @staticmethod
-    async def save_to_database(calc_id: int, data: list, session):
+    async def save_to_database(calc_id: int, calc_reso_id: int, rl_actions_data: dict, data: list, session):
         """
             Сохранение в Базу Данных
         """
         try:
-            await services.create_insurance_elt(calc_id, data, session)
+            # Проверка есть ли в базе
+            exist_insurance = await services.check_exist_insurance(calc_reso_id, session)
+            print('exist_insurance: ', exist_insurance)
+            if exist_insurance:
+                await services.delete_insurance_by_calc_reso_id(calc_reso_id, session)
+            await services.create_insurance_elt(calc_id, calc_reso_id, rl_actions_data, data, session)
         except Exception as exc:
             logger.error(exc)
             raise global_exceptions.MyHTTPException(
@@ -138,19 +208,80 @@ class EltService:
                 message='Произошла ошибка при сохранении результата ELT в Базу Данных',
             )
 
+    async def get_rl_actions(self,
+                             data: schemas.ResoGuaranteeCreate,
+                             companies: list[dict], session: AsyncSession):
+        """
+            Передача номер расчета ЕЛТ и премии конкурентов в Ресо Гарантию
+        """
+        params = {
+            'parameter': {
+                'CalcID': data.calc_id,
+                'PrevCalcID': data.prev_calc_id,
+                'CalculationList': {
+                    'Calculation': companies,
+                }
+            }
+        }
+        response_rl_actions = self.request_reso_guarantee(
+            self._client_reso_guarantee,
+            'get_rl_actions',
+            'GetRLActions',
+            params=params,
+        )
+        data_rl_actions = serialize_object(response_rl_actions)
+        if data_rl_actions.get('Error') == 'OK':
+            quote_id = data_rl_actions.get('QuoteID')
+            police_id = data_rl_actions.get('PolicyID')
+
+            response_status = self.request_reso_guarantee(
+                self._client_reso_guarantee,
+                'get_rl_status',
+                'GetRLStatus',
+                params={'QuoteID': quote_id},
+            )
+            data_status = serialize_object(response_status)
+            # Добавляем в Базу Квот
+            await services.update_insurance(
+                data.calc_id,
+                {'quote_id': quote_id, 'police_id': police_id},
+                session,
+            )
+            if data_status.get('Error') == 'OK':
+                if data_status.get('Status') == 'SUCEESS':
+                    return {'quote_id': quote_id, 'police_id': police_id}
+                else:
+                    raise global_exceptions.MyHTTPException(
+                        status=global_schemas.StatusResponseEnum.ERROR,
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        message=data_status,
+                    )
+            else:
+                raise global_exceptions.MyHTTPException(
+                    status=global_schemas.StatusResponseEnum.ERROR,
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message=data_status.get('Error'),
+                )
+        else:
+            raise global_exceptions.MyHTTPException(
+                status=global_schemas.StatusResponseEnum.ERROR,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=data_rl_actions,
+            )
+
     async def casco_calculation(self,
                                 method: str,
                                 cache_id: str,
-                                companies: list[str],
                                 data: schemas.EltCascoCalculation,
-                                session: AsyncSession) -> tuple:
+                                session: AsyncSession):
         """
             Метод получения расчета
         """
         calc_id = None
         result_requests = []
+        calc_reso_id = data.calc_reso_id
 
-        for company in companies:
+        for company in data.active_companies:
             try:
                 request = {
                     'AuthInfo': {
@@ -159,7 +290,7 @@ class EltService:
                     },
                     'InsuranceCompany': company,
                     'ContractOptionId': 1,
-                    'Params': data.model_dump(),
+                    'Params': data.model_dump(exclude={'calc_reso_id', 'active_companies'}),
                 }
                 result = await self.request(self._client, cache_id, method, request)
                 # Преобразование результата в словарь
@@ -201,9 +332,24 @@ class EltService:
         # Проверка на валидность
         await self.check_valid_more_three_companies(result_requests)
 
-        # Сохранение в БД
-        await self.save_to_database(calc_id, result_requests, session)
+        # Отправляем в Ресо Гарантию
+        companies = [
+            {
+                'InsuranceCompany': company_name,
+                'PremiumSum': company_info.get('data').get('PremiumSum'),
+                'Franchise': int(company_info.get('data').get('TotalFranchise')) if company_info.get('data').get('TotalFranchise') else 0,
+            } for company_data in result_requests for company_name, company_info in company_data.items()
+        ]
 
+        data_rl_actions = schemas.ResoGuaranteeCreate(
+            calc_id=result_requests[3].get('RESO_GARANTIJA').get('data').get('SKCalcId'),
+        )
+        rl_actions_data = await self.get_rl_actions(data_rl_actions, companies, session)
+        result_requests[3].get('RESO_GARANTIJA')['quote_id'] = rl_actions_data.get('quote_id')
+        result_requests[3].get('RESO_GARANTIJA')['police_id'] = rl_actions_data.get('police_id')
+
+        # Сохранение в БД
+        calc_id = await self.save_to_database(calc_id, calc_reso_id, rl_actions_data, result_requests, session)
         return result_requests, calc_id
 
 
@@ -554,18 +700,28 @@ class SoapService:
         return client_.service.GetRegionsExt()
 
     @classmethod
+    def testing(cls, client_):
+        """
+            Получения справочной информации
+        """
+        cache_id = 'get_ref_info'
+        return cls.request(
+            client_,
+            cache_id,
+            'GetOptions',
+        )
+
+
+    @classmethod
     def check_valid_more_three_companies(cls, data: list):
         """
             Проверка на валидность более трех компаний
         """
         success_elt_companies = []
-        print('data: ', data)
         for el in data:
             # test = el[el.keys()[0]]
             insurance_name = list(el.keys())[0]
-            print('insurance_name: ', insurance_name)
             data = el.get(insurance_name)
-            print('data: ', data)
             if data.get('data').get('Error') is None:
                 success_elt_companies.append(insurance_name)
 
@@ -581,18 +737,13 @@ class SoapService:
         """
             Сохранение в Базу Данных
         """
-        print('save_to_database')
         loop = asyncio.get_event_loop()
-        print('save_to_database - 1.1')
         try:
             loop.run_until_complete(services.create_insurance_elt(calc_id, data, session))
-            print('save_to_database - 1.2')
         except Exception as e:
             logger.error(f"Error saving to database: {e}")
         finally:
-            print('save_to_database - 4')
             loop.close()
-            print('save_to_database - 5')
 
     @classmethod
     def casco_calculation(cls,
@@ -800,11 +951,7 @@ class ResoGuarantee:
 
             if data_status.get('Error') == 'OK':
                 if data_status.get('Status') == 'SUCEESS':
-                    raise global_exceptions.MyHTTPException(
-                        status=global_schemas.StatusResponseEnum.SUCCESS,
-                        status_code=status.HTTP_200_OK,
-                        message='Полис успешно создан',
-                    )
+                    return schemas.QuoteResponse(quote_id=quote_id)
                 else:
                     raise global_exceptions.MyHTTPException(
                         status=global_schemas.StatusResponseEnum.ERROR,
@@ -923,9 +1070,7 @@ class ResoGuaranteeAsync:
             'GetRLActions',
             params=params,
         )
-        print('response_rl_actions: ', response_rl_actions)
         data_rl_actions = serialize_object(response_rl_actions)
-        print('data_rl_actions: ', data_rl_actions)
 
         if data_rl_actions.get('Error') == 'OK':
             response_status = await self.request(
@@ -938,7 +1083,6 @@ class ResoGuaranteeAsync:
             if data_status.get('Error') == 'OK':
                 if data_status.get('Status') == 'SUCEESS':
                     print('SUCCESS')
-                    print('data_status: ', data_status)
                 else:
                     raise global_exceptions.MyHTTPException(
                         status=global_schemas.StatusResponseEnum.ERROR,
