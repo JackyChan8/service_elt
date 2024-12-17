@@ -13,7 +13,7 @@ COPY . .
 # Install dependencies
 RUN pip install -r requirements.txt
 
-EXPOSE 8000
+EXPOSE 9000
 
 # Run application
 CMD ["bash", "-c", "alembic upgrade head; uvicorn main:app --reload"]
